@@ -242,7 +242,7 @@ where
 		varlen.to_writer(self.writer)?;
 
 		self.write_raw(v)
-    }
+	}
 
 	fn serialize_none(self) -> Result<()> {
 		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize none")))
@@ -388,16 +388,16 @@ where
 	type Ok = ();
 	type Error = Error;
 
-    fn serialize_element<T>(&mut self, value: &T) -> Result<()>
-    where
-        T: ?Sized + ser::Serialize,
-    {
-    	value.serialize(self)
-    }
+	fn serialize_element<T>(&mut self, value: &T) -> Result<()>
+	where
+		T: ?Sized + ser::Serialize,
+	{
+		value.serialize(self)
+	}
 
-    fn end(self) -> Result<()> {
-        Ok(())
-    }
+	fn end(self) -> Result<()> {
+		Ok(())
+	}
 }
 
 // Same as SerializeSeq
@@ -405,19 +405,19 @@ impl<'a, W> ser::SerializeTuple for Serializer<'a, W>
 where
 	W: Write	
 {
-    type Ok = ();
-    type Error = Error;
+	type Ok = ();
+	type Error = Error;
 
-    fn serialize_element<T>(&mut self, value: &T) -> Result<()>
-    where
-        T: ?Sized + ser::Serialize,
-    {
-    	value.serialize(self)
-    }
+	fn serialize_element<T>(&mut self, value: &T) -> Result<()>
+	where
+		T: ?Sized + ser::Serialize,
+	{
+		value.serialize(self)
+	}
 
-    fn end(self) -> Result<()> {
-        Ok(())
-    }
+	fn end(self) -> Result<()> {
+		Ok(())
+	}
 }
 
 // Same as SerializeSeq
@@ -425,45 +425,45 @@ impl<'a, W> ser::SerializeTupleStruct for Serializer<'a, W>
 where
 	W: Write
 {
-    type Ok = ();
-    type Error = Error;
+	type Ok = ();
+	type Error = Error;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<()>
-    where
-        T: ?Sized + ser::Serialize,
-    {
-    	value.serialize(self)
-    }
+	fn serialize_field<T>(&mut self, value: &T) -> Result<()>
+	where
+		T: ?Sized + ser::Serialize,
+	{
+		value.serialize(self)
+	}
 
-    fn end(self) -> Result<()> {
-        Ok(())
-    }
+	fn end(self) -> Result<()> {
+		Ok(())
+	}
 }
 
 impl<'a, W> ser::SerializeMap for Serializer<'a, W>
 where
 	W: Write
 {
-    type Ok = ();
-    type Error = Error;
+	type Ok = ();
+	type Error = Error;
 
-    fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
-    where
-        T: ?Sized + ser::Serialize,
-    {
-    	Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize map elements")))
-    }
+	fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
+	where
+		T: ?Sized + ser::Serialize,
+	{
+		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize map elements")))
+	}
 
-    fn serialize_value<T>(&mut self, _value: &T) -> Result<()>
-    where
-        T: ?Sized + ser::Serialize,
-    {
-        Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize map elements")))
-    }
+	fn serialize_value<T>(&mut self, _value: &T) -> Result<()>
+	where
+		T: ?Sized + ser::Serialize,
+	{
+		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize map elements")))
+	}
 
-    fn end(self) -> Result<()> {
-        Ok(())
-    }
+	fn end(self) -> Result<()> {
+		Ok(())
+	}
 }
 
 // Defer to SerializeMap implementation
@@ -471,28 +471,28 @@ impl<'a, W> ser::SerializeStruct for Serializer<'a, W>
 where
 	W: Write
 {
-    type Ok = ();
-    type Error = Error;
+	type Ok = ();
+	type Error = Error;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
-    where
-        T: ?Sized + ser::Serialize,
-    {
-    	let key_bytes = key.as_bytes();
-    	if key_bytes.len() > 255 {
-        	return Err(Error::new_no_msg(ErrorKind::KeyTooLong))
-        }
-    	self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_UNKNOWN)?;
-        
-        let key_len_byte = [key_bytes.len() as u8];
-        self.write_raw(&key_len_byte)?;
-        self.write_raw(key_bytes)?;
-        value.serialize(self)
-    }
+	fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
+	where
+		T: ?Sized + ser::Serialize,
+	{
+		let key_bytes = key.as_bytes();
+		if key_bytes.len() > 255 {
+			return Err(Error::new_no_msg(ErrorKind::KeyTooLong))
+		}
+		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_UNKNOWN)?;
+		
+		let key_len_byte = [key_bytes.len() as u8];
+		self.write_raw(&key_len_byte)?;
+		self.write_raw(key_bytes)?;
+		value.serialize(self)
+	}
 
-    fn end(self) -> Result<()> {
-        Ok(())
-    }
+	fn end(self) -> Result<()> {
+		Ok(())
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////
