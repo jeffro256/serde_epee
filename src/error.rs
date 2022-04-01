@@ -11,7 +11,18 @@ pub enum ErrorKind {
 	MissingFormatVersion,
 	EnumVariantIndexTooBig,
 	VarIntTooBig,
-	SerdeModelUnsupported
+	VarIntTooSmall,
+	SerdeModelUnsupported,
+	TooManySectionFields,
+	NoLength,
+	KeyBadType,
+	KeyBadEncoding,
+	KeyTooLong,
+	StringTooLong,
+	ArrayMixedTypes,
+	NestedArrays,
+	ArrayTooLong,
+	TupleTooLong
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,14 +73,6 @@ impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
 	fn from(ioe: std::io::Error) -> Self {
-		Self { kind: ErrorKind::IOError(ioe), msg: String::from("IOError") }
+		Self { kind: ErrorKind::IOError(ioe.kind()), msg: String::from("IOError") }
 	}
 }
-
-/*
-impl From<std::num::TryFromIntError> for Error {
-	fn from(tre: std::num::TryFromIntError) -> Self {
-		Self { kind: ErrorKind::TryFromIntError, msg: String::from("TryFromIntError (from u64)") }
-	}
-}
-*/

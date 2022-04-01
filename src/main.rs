@@ -1,13 +1,23 @@
 extern crate serde_epee;
 
-use serde_epee::{Result, Serializer, VarInt};
+use std::io::Write;
+use std::fs::File;
+
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct TestStruct {
+    var_a: u32,
+    var_b: u8
+}
+
+use serde_epee::{Result, to_bytes};
 
 fn main() -> Result<()> {
-    let mut moop = [0u8; 100];
-    let s = Serializer::new(&mut moop[..]);
-    let v = VarInt::from(55u64);
-    let w: u8 = v.try_into()?;
-    println!("Hello, world! {:?} {}", s, w);
+    let test_val = TestStruct { var_a: 4242, var_b: 77 };
+    let b = to_bytes(&test_val)?;
+    let mut f = File::create("ser_test.dat")?;
+    f.write(&b)?;
 
     Ok(())
 }
