@@ -19,10 +19,16 @@ pub enum ErrorKind {
 	KeyBadEncoding,
 	KeyTooLong,
 	StringTooLong,
+	StringBadEncoding,
 	ArrayMixedTypes,
 	NestedArrays,
 	ArrayTooLong,
-	TupleTooLong
+	TupleTooLong,
+	BadTypeCode,
+	ExpectedArray,
+	ExpectedArrayEnd,
+	BadUnicodeScalar,
+	ExpectedFormatSignature
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -165,10 +165,10 @@ where
 	}
 }
 
-macro_rules! serialize_int {
-	($fname:ident, $itype:ty, $intcode:expr) => (
-		fn $fname(self, v: $itype) -> Result<()> {
-			self.serialize_start_and_type_code($intcode)?;
+macro_rules! serialize_num {
+	($fname:ident, $numtype:ty, $numcode:expr) => (
+		fn $fname(self, v: $numtype) -> Result<()> {
+			self.serialize_start_and_type_code($numcode)?;
 			self.write_raw(&v.to_le_bytes())
 		}
 	)
@@ -189,32 +189,27 @@ where
 	type SerializeStruct = Serializer<'b, W>;
 	type SerializeStructVariant = Serializer<'b, W>;
 
-	serialize_int!{serialize_i8, i8, constants::SERIALIZE_TYPE_INT8}
-	serialize_int!{serialize_i16, i16, constants::SERIALIZE_TYPE_INT16}
-	serialize_int!{serialize_i32, i32, constants::SERIALIZE_TYPE_INT32}
-	serialize_int!{serialize_i64, i64, constants::SERIALIZE_TYPE_INT64}
-	serialize_int!{serialize_u8, u8, constants::SERIALIZE_TYPE_UINT8}
-	serialize_int!{serialize_u16, u16, constants::SERIALIZE_TYPE_UINT16}
-	serialize_int!{serialize_u32, u32, constants::SERIALIZE_TYPE_UINT32}
-	serialize_int!{serialize_u64, u64, constants::SERIALIZE_TYPE_UINT64}
+	serialize_num!{serialize_i8, i8, constants::SERIALIZE_TYPE_INT8}
+	serialize_num!{serialize_i16, i16, constants::SERIALIZE_TYPE_INT16}
+	serialize_num!{serialize_i32, i32, constants::SERIALIZE_TYPE_INT32}
+	serialize_num!{serialize_i64, i64, constants::SERIALIZE_TYPE_INT64}
+	serialize_num!{serialize_u8, u8, constants::SERIALIZE_TYPE_UINT8}
+	serialize_num!{serialize_u16, u16, constants::SERIALIZE_TYPE_UINT16}
+	serialize_num!{serialize_u32, u32, constants::SERIALIZE_TYPE_UINT32}
+	serialize_num!{serialize_u64, u64, constants::SERIALIZE_TYPE_UINT64}
+	serialize_num!{serialize_f64, f64, constants::SERIALIZE_TYPE_DOUBLE}
 
 	fn serialize_bool(self, v: bool) -> Result<()> {
 		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_BOOL)?;
 		self.serialize_u8(v.into())
 	}
 
-	fn serialize_f32(self, _v: f32) -> Result<()> {
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize floats")))
-	}
-
-	fn serialize_f64(self, _v: f64) -> Result<()> {
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize doubles")))
+	fn serialize_f32(self, v: f32) -> Result<()> {
+		self.serialize_f64(v as f64)
 	}
 
 	fn serialize_char(self, v: char) -> Result<()> {
-		let mut buf = [0u8; 4]; // Should be big enough for all Unicode scalar values
-		let s = v.encode_utf8(&mut buf);
-		self.serialize_str(s)
+		self.serialize_u32(v as u32)
 	}
 
 	fn serialize_str(self, v: &str) -> Result<()> {

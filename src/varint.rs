@@ -8,6 +8,7 @@ const MAX_DWORD_VAL:  u64 =          1073741823;
 const MAX_QWORD_VAL:  u64 = 4611686018427387903; 
 const MAX_VARINT_VAL: u64 = MAX_QWORD_VAL;
 
+#[derive(Debug)]
 pub struct VarInt {
 	value: u64,
 }
@@ -37,8 +38,20 @@ impl VarInt {
 		}
 	}
 
-	pub fn from_reader<R: std::io::Read>(_reader: &mut R) -> Result<Self> {
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("Not supported (yet)")))
+	pub fn from_reader<R: std::io::Read>(reader: &mut R) -> Result<Self> {
+		let mut buf = [0u8; 8];
+		if let Err(ioe) = reader.read_exact(&mut buf[..1]) {
+			return Err(ioe.into());
+		}
+
+		let var_mask = buf[0] & 0b11;
+		let byte_size = 1 << var_mask;
+
+		if let Err(ioe) = reader.read_exact(&mut buf[1..byte_size]) {
+			return Err(ioe.into());
+		}
+
+		Ok(Self { value: u64::from_le_bytes(buf) >> 2 })
 	}
 }
 
