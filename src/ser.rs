@@ -131,8 +131,6 @@ where
 	}
 
 	fn serialize_start_and_type_code(&mut self, type_code: u8) -> Result<()> {
-		println!("start called!: {}", type_code);
-
 		if !self.started {
 			match &self.storage_format {
 				EpeeStorageFormat::Section => self.write_type_code(constants::SERIALIZE_TYPE_OBJECT, false)?,
@@ -213,25 +211,16 @@ where
 	}
 
 	fn serialize_str(self, v: &str) -> Result<()> {
-		let str_bytes = v.as_bytes();
-
-		if str_bytes.len() > constants::MAX_STRING_LEN_POSSIBLE {
-			return Err(Error::new_no_msg(ErrorKind::StringTooLong));
-		}
-
-		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_STRING)?;
-		let varlen = VarInt::from(str_bytes.len() as u32);
-		varlen.to_writer(self.writer)?;
-		self.write_raw(str_bytes)
+		self.serialize_bytes(v.as_bytes())
 	}
 
+	// EPEE "Blob"
 	fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-		// Serializes &[u8] as an EPEE array of type uint8
 		if v.len() > constants::MAX_STRING_LEN_POSSIBLE {
 			return Err(Error::new_no_msg(ErrorKind::StringTooLong));
 		}
 
-		self.write_type_code(constants::SERIALIZE_TYPE_UINT8, true)?;
+		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_STRING)?;
 
 		let varlen = VarInt::from(v.len() as u32);
 		varlen.to_writer(self.writer)?;
@@ -355,7 +344,6 @@ where
 		_name: &'static str,
 		len: usize,
 	) -> Result<Self::SerializeStruct> {
-		println!("serialize struct!");
 		self.serialize_map(Some(len))
 	}
 
