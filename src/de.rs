@@ -1,10 +1,7 @@
 use std::io::Read;
 
 use serde::Deserialize;
-use serde::de::{
-	self, DeserializeSeed, EnumAccess, IntoDeserializer, MapAccess, SeqAccess,
-	VariantAccess, Visitor,
-};
+use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
 use crate::constants;
 use crate::error::{Error, ErrorKind, Result};
@@ -100,7 +97,7 @@ macro_rules! deserialize_num {
 impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	type Error = Error;
 
-	fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
+	fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
@@ -207,7 +204,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 		visitor.visit_some(self)
 	}
 
-	fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+	fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
@@ -217,7 +214,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	fn deserialize_unit_struct<V>(
 		self,
 		_name: &'static str,
-		visitor: V,
+		_visitor: V,
 	) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
@@ -228,7 +225,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	fn deserialize_newtype_struct<V>(
 		self,
 		_name: &'static str,
-		visitor: V,
+		_visitor: V,
 	) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
@@ -286,7 +283,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 		self.deserialize_tuple(len, visitor)
 	}
 
-	fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
+	fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
@@ -309,7 +306,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 		self,
 		_name: &'static str,
 		_variants: &'static [&'static str],
-		visitor: V,
+		_visitor: V,
 	) -> Result<V::Value>
 	where
 		V: Visitor<'de>,

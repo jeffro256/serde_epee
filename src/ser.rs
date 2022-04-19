@@ -35,7 +35,8 @@ pub struct Serializer<'a, W: Write> {
 	storage_format: EpeeStorageFormat,
 	len: u32,
 	element_type: u8, // only important for arrays to enforce type consistency
-	started: bool
+	started: bool,
+	serializing_key: bool
 }
 
 impl<'a, W> Serializer<'a, W>
@@ -53,10 +54,11 @@ where
 				storage_format: EpeeStorageFormat::Section,
 				len: len,
 				element_type: constants::SERIALIZE_TYPE_UNKNOWN,
-				started: false
+				started: false,
+				serializing_key: false
 			})
 		} else {
-			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to deserialize section with too many fields")))
+			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to serialize section with too many fields")))
 		}
 	}
 
@@ -67,10 +69,11 @@ where
 				storage_format: EpeeStorageFormat::RootSection,
 				len: len,
 				element_type: constants::SERIALIZE_TYPE_UNKNOWN,
-				started: false
+				started: false,
+				serializing_key: false
 			})
 		} else {
-			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to deserialize section with too many fields")))
+			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to serialize section with too many fields")))
 		}
 	}
 
@@ -81,10 +84,11 @@ where
 				storage_format: EpeeStorageFormat::Array,
 				len: len,
 				element_type: constants::SERIALIZE_TYPE_UNKNOWN,
-				started: false
+				started: false,
+				serializing_key: false
 			})
 		} else {
-			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to deserialize section with too many fields")))
+			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to serialize section with too many fields")))
 		}
 	}
 
@@ -95,10 +99,11 @@ where
 				storage_format: EpeeStorageFormat::Packed,
 				len: len,
 				element_type: constants::SERIALIZE_TYPE_UNKNOWN,
-				started: false
+				started: false,
+				serializing_key: false
 			})
 		} else {
-			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to deserialize section with too many fields")))
+			Err(Error::new(ErrorKind::TooManySectionFields, String::from("trying to serialize section with too many fields")))
 		}
 	}
 
@@ -108,7 +113,8 @@ where
 			storage_format: EpeeStorageFormat::Unstarted,
 			len: 0,
 			element_type: constants::SERIALIZE_TYPE_UNKNOWN,
-			started: false
+			started: false,
+			serializing_key: false
 		})
 	}
 
@@ -128,6 +134,17 @@ where
 		let array_mask = if is_array { constants::SERIALIZE_FLAG_ARRAY } else { 0 }; 
 		let type_byte = [type_code | array_mask];
 		self.write_raw(&type_byte).into()
+	}
+
+	// Format: one unsigned byte for the length, then the rest of the string, max 255 bytes
+	fn write_key_string(&mut self, s: &[u8]) -> Result<()> {
+		if s.len() > constants::MAX_SECTION_KEY_SIZE {
+			return Err(Error::new_no_msg(ErrorKind::KeyTooLong));
+		}
+
+		let len = s.len() as u8;
+		self.write_raw(&[len])?;
+		self.write_raw(s)
 	}
 
 	fn serialize_start_and_type_code(&mut self, type_code: u8) -> Result<()> {
@@ -151,6 +168,8 @@ where
 
 		if self.storage_format == EpeeStorageFormat::Array && type_code != self.element_type {
 			return Err(Error::new_no_msg(ErrorKind::ArrayMixedTypes));
+		} else if self.serializing_key && type_code != constants::SERIALIZE_TYPE_STRING {
+			return Err(Error::new_no_msg(ErrorKind::KeyBadType))
 		}
 
 		if (self.storage_format == EpeeStorageFormat::Section || self.storage_format == EpeeStorageFormat::RootSection)
@@ -216,16 +235,22 @@ where
 
 	// EPEE "Blob"
 	fn serialize_bytes(self, v: &[u8]) -> Result<()> {
-		if v.len() > constants::MAX_STRING_LEN_POSSIBLE {
-			return Err(Error::new_no_msg(ErrorKind::StringTooLong));
+		if self.serializing_key {
+			let res = self.write_key_string(v);
+			self.serializing_key = false;
+			return res;
+		} else {
+			if v.len() > constants::MAX_STRING_LEN_POSSIBLE {
+				return Err(Error::new_no_msg(ErrorKind::StringTooLong));
+			}
+
+			self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_STRING)?;
+
+			let varlen = VarInt::try_from(v.len()).unwrap();
+			varlen.to_writer(self.writer)?;
+
+			return self.write_raw(v);
 		}
-
-		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_STRING)?;
-
-		let varlen = VarInt::from(v.len() as u32);
-		varlen.to_writer(self.writer)?;
-
-		self.write_raw(v)
 	}
 
 	fn serialize_none(self) -> Result<()> {
@@ -378,6 +403,7 @@ where
 		value.serialize(self)
 	}
 
+	// @TODO: enforce length of serialized compound
 	fn end(self) -> Result<()> {
 		Ok(())
 	}
@@ -398,6 +424,7 @@ where
 		value.serialize(self)
 	}
 
+	// @TODO: enforce length of serialized compound
 	fn end(self) -> Result<()> {
 		Ok(())
 	}
@@ -418,6 +445,7 @@ where
 		value.serialize(self)
 	}
 
+	// @TODO: enforce length of serialized compound
 	fn end(self) -> Result<()> {
 		Ok(())
 	}
@@ -430,26 +458,33 @@ where
 	type Ok = ();
 	type Error = Error;
 
-	fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
+	fn serialize_key<T>(&mut self, key: &T) -> Result<()>
 	where
 		T: ?Sized + ser::Serialize,
 	{
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize map elements")))
+		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_UNKNOWN)?;
+
+		// Man I really need specialization
+		self.serializing_key = true;
+		key.serialize(self)?;
+		// serializing_key set to false it serialize_bytes()
+
+		Ok(())
 	}
 
-	fn serialize_value<T>(&mut self, _value: &T) -> Result<()>
+	fn serialize_value<T>(&mut self, value: &T) -> Result<()>
 	where
 		T: ?Sized + ser::Serialize,
 	{
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("can't serialize map elements")))
+		value.serialize(self)
 	}
 
+	// @TODO: enforce length of serialized compound
 	fn end(self) -> Result<()> {
 		Ok(())
 	}
 }
 
-// Defer to SerializeMap implementation
 impl<'a, W> ser::SerializeStruct for Serializer<'a, W>
 where
 	W: Write
@@ -461,18 +496,13 @@ where
 	where
 		T: ?Sized + ser::Serialize,
 	{
-		let key_bytes = key.as_bytes();
-		if key_bytes.len() > 255 {
-			return Err(Error::new_no_msg(ErrorKind::KeyTooLong))
-		}
 		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_UNKNOWN)?;
-		
-		let key_len_byte = [key_bytes.len() as u8];
-		self.write_raw(&key_len_byte)?;
-		self.write_raw(key_bytes)?;
+
+		self.write_key_string(key.as_bytes())?;
 		value.serialize(self)
 	}
 
+	// @TODO: enforce length of serialized compound
 	fn end(self) -> Result<()> {
 		Ok(())
 	}
