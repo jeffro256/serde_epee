@@ -9,6 +9,15 @@ use crate::varint::VarInt;
 // User functions                                                            //
 ///////////////////////////////////////////////////////////////////////////////
 
+pub fn serialize_into<T, W>(value: &T, writer: &mut W) -> Result<()>
+where
+	T: Serialize,
+	W: Write
+{
+	let mut serializer = Serializer::new_unstarted(writer)?;
+	value.serialize(&mut serializer)
+}
+
 pub fn to_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 	let mut byte_stream = Vec::<u8>::new(); // Vec<u8> implements Write
 	let mut serializer = Serializer::new_unstarted(&mut byte_stream)?;

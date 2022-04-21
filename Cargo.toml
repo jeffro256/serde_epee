@@ -2,7 +2,6 @@
 name = "serde_epee"
 version = "0.1.1"
 edition = "2021"
-license = "MIT"
 license-file = "LICENSE.txt"
 description = "Serde support for EPEE"
 readme = "README.md"

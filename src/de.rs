@@ -11,6 +11,15 @@ use crate::VarInt;
 // User functions                                                            //
 ///////////////////////////////////////////////////////////////////////////////
 
+pub fn deserialize_from<'a, T, R>(reader: &'a mut R) -> Result<T>
+where
+	T: Deserialize<'a>,
+	R: Read
+{
+	let mut deserializer = Deserializer::from_reader(reader)?;
+	T::deserialize(&mut deserializer)
+}
+
 // @TODO: Look into implementing Deserializer for DeserializeOwned to reduce copies
 pub fn from_bytes<'a, T>(bytes: &'a mut &[u8]) -> Result<T>
 where
@@ -237,7 +246,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	where
 		V: Visitor<'de>,
 	{
-		let (element_type_code, is_array) = self.read_type_code()?;
+		let (_element_type_code, is_array) = self.read_type_code()?;
 
 		if !is_array {
 			return Err(Error::new_no_msg(ErrorKind::ExpectedArray));
@@ -250,7 +259,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 			return Err(Error::new_no_msg(ErrorKind::ArrayTooLong));
 		}
 
-		let seq_de = EpeeCompound::new_array(self, array_size, element_type_code); 
+		let seq_de = EpeeCompound::new_array(self, array_size); 
 		let value = visitor.visit_seq(seq_de)?;
 		// @TODO Check if sequence is done
 		/*
@@ -332,15 +341,15 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 struct EpeeCompound<'a, 'de: 'a, R: Read> {
 	deserializer: &'a mut Deserializer<'de, R>,
 	remaining: usize,
-	type_code: u8
+	//type_code: u8
 }
 
 impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
-	fn new_array(deserializer: &'a mut Deserializer<'de, R>, array_len: usize, type_code: u8) -> Self {
+	fn new_array(deserializer: &'a mut Deserializer<'de, R>, array_len: usize) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: array_len,
-			type_code: type_code
+			//type_code: type_code
 		}
 	}
 
@@ -348,7 +357,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 		Self {
 			deserializer: deserializer,
 			remaining: section_len,
-			type_code: constants::SERIALIZE_TYPE_UNKNOWN
+			//type_code: constants::SERIALIZE_TYPE_UNKNOWN
 		}
 	}
 
