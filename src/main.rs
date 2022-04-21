@@ -5,28 +5,7 @@ use std::time;
 use serde::{Deserialize, Serialize};
 
 extern crate serde_epee;
-//use serde_epee;
-//use serde_epee::{Result, to_bytes, Deserializer, VarInt};
-
-/*
-section = cls()
-node_data = Section()
-# node_data.add("local_time", c_uint64(0x4141414141414141))
-node_data.add("local_time", c_uint64(int(time())))
-node_data.add("my_port", c_uint32(my_port))
-node_data.add("network_id", c_string(network_id))
-node_data.add("peer_id", c_uint64(peer_id))
-section.add("node_data", node_data)
-
-payload_data = Section()
-payload_data.add("cumulative_difficulty", c_uint64(1))
-payload_data.add("current_height", c_uint64(1))
-genesis_hash = bytes.fromhex("418015bb9ae982a1975da7d79277c2705727a56894ba0fb246adaabb1f4632e3")  # genesis
-payload_data.add("top_id", c_string(genesis_hash))
-payload_data.add("top_version", c_ubyte(1))
-section.add("payload_data", payload_data)
-return section
-*/
+use serde_epee::Section;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct NodeData {
@@ -100,10 +79,14 @@ fn main() -> serde_epee::Result<()> {
 	println!("{:?}", v);
     */
 
-    let handshake = create_handshake();
-    let hand_bytes = serde_epee::to_bytes(&handshake)?;
-    let mut handf = File::create("handshake_test.dat")?;
-    handf.write_all(&hand_bytes)?;
+    let mut section = Section::new();
+    section.insert_u32("beep".to_string(), 47);
+    section.insert_array_bool("ahhhhhhh".to_string(), vec![true, false, false, false, true, true]);
+
+    //let handshake = create_handshake();
+    let ser_bytes = serde_epee::to_bytes(&section)?;
+    let mut outf = File::create("section_test.dat")?;
+    outf.write_all(&ser_bytes)?;
 
 	Ok(())
 }

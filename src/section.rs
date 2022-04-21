@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use serde;
 use serde::Serialize;
-use serde::ser::SerializeSeq;
 use serde_bytes;
 
 #[derive(Clone, Serialize)]
@@ -126,6 +125,10 @@ macro_rules! get_array {
 }
 
 impl Section {
+	pub fn new() -> Self {
+		Self( HashMap::<String, SectionEntry>::new() )
+	}
+
 	insert_scalar!{i64, insert_i64, Int64}
 	insert_scalar!{i32, insert_i32, Int32}
 	insert_scalar!{i16, insert_i16, Int16}

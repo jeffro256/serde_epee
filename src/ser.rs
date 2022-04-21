@@ -167,7 +167,8 @@ where
 		}
 
 		if self.storage_format == EpeeStorageFormat::Array && type_code != self.element_type {
-			return Err(Error::new_no_msg(ErrorKind::ArrayMixedTypes));
+			let msg = format!("type_codes: {} -> {}", self.element_type, type_code);
+			return Err(Error::new(ErrorKind::ArrayMixedTypes, msg));
 		} else if self.serializing_key && type_code != constants::SERIALIZE_TYPE_STRING {
 			return Err(Error::new_no_msg(ErrorKind::KeyBadType))
 		}
@@ -218,7 +219,7 @@ where
 
 	fn serialize_bool(self, v: bool) -> Result<()> {
 		self.serialize_start_and_type_code(constants::SERIALIZE_TYPE_BOOL)?;
-		self.serialize_u8(v.into())
+		self.write_raw(&[v as u8])
 	}
 
 	fn serialize_f32(self, v: f32) -> Result<()> {
