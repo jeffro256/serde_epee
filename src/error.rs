@@ -47,6 +47,10 @@ impl Error {
 	pub fn new_no_msg(kind: ErrorKind) -> Self {
 		Self { kind: kind, msg: String::from("") }
 	}
+
+	pub fn kind(&self) -> ErrorKind {
+		self.kind.clone()
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////

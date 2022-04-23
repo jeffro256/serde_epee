@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use serde;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use serde_bytes;
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum SectionScalar {
 	Int64(i64),
@@ -24,7 +24,7 @@ enum SectionScalar {
 }
 
 // The reason for the difference between "scalars" and "arrays" is because EPEE doesn't allow nested arrays
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum SectionArray {
 	Int64(Vec<i64>),
@@ -43,14 +43,14 @@ enum SectionArray {
 	Object(Vec<Section>)
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum SectionEntry {
 	Scalar(SectionScalar),
 	Array(SectionArray)
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Section(HashMap<String, SectionEntry>);
 

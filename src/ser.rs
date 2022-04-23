@@ -1,6 +1,7 @@
-use std::io::Write;
+use std::io::{self, Write};
 use serde::{ser, Serialize};
 
+use crate::byte_counter::ByteCounter;
 use crate::error::{Error, ErrorKind, Result};
 use crate::constants;
 use crate::varint::VarInt;
@@ -9,7 +10,7 @@ use crate::varint::VarInt;
 // User functions                                                            //
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn serialize_into<T, W>(value: &T, writer: &mut W) -> Result<()>
+pub fn serialize_into<T, W>(writer: &mut W, value: &T) -> Result<()>
 where
 	T: Serialize,
 	W: Write
@@ -23,6 +24,15 @@ pub fn to_bytes<T: Serialize>(value: &T) -> Result<Vec<u8>> {
 	let mut serializer = Serializer::new_unstarted(&mut byte_stream)?;
 	value.serialize(&mut serializer)?;
 	Ok(byte_stream)
+}
+
+pub fn serialized_size<T>(value: &T) -> Result<usize>
+where
+T: Serialize
+{
+	let mut sink_counter = ByteCounter::new(io::sink());
+	serialize_into(&mut sink_counter, value)?;
+	Ok(sink_counter.bytes_written())
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -292,7 +292,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 		self.deserialize_tuple(len, visitor)
 	}
 
-	fn deserialize_map<V>(self, _visitor: V) -> Result<V::Value>
+	fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
