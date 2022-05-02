@@ -8,6 +8,23 @@ use crate::error::{Error, ErrorKind, Result};
 use crate::VarInt;
 
 ///////////////////////////////////////////////////////////////////////////////
+// Error macros                                                              //
+///////////////////////////////////////////////////////////////////////////////
+
+macro_rules! err {
+	($kind:ident) => (Err(Error::new_no_msg(ErrorKind::$kind)))
+}
+
+macro_rules! err_msg {
+	($kind:ident, $fmt:expr, $($fmt_args:expr), *) => (
+		Err(Error::new(ErrorKind::$kind, format!($fmt, $($fmt_args), *)))
+	);
+	($kind:ident, $msg:expr) => (
+		Err(Error::new(ErrorKind::$kind, $msg.to_string()))
+	)
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // User functions                                                            //
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -16,7 +33,7 @@ where
 	T: Deserialize<'a>,
 	R: Read
 {
-	let mut deserializer = Deserializer::from_reader(reader)?;
+	let mut deserializer = Deserializer::from_reader(reader);
 	T::deserialize(&mut deserializer)
 }
 
@@ -25,34 +42,105 @@ pub fn from_bytes<'a, T>(bytes: &'a mut &[u8]) -> Result<T>
 where
 	T: Deserialize<'a>,
 {
-	let mut deserializer = Deserializer::from_reader(bytes)?;
+	let mut deserializer = Deserializer::from_reader(bytes);
 	T::deserialize(&mut deserializer)
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// EPEE Type definitions                                                     //
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+enum EpeeScalarType {
+	Int64,
+	Int32,
+	Int16,
+	Int8,
+	UInt64,
+	UInt32,
+	UInt16,
+	UInt8,
+	Double,
+	Str,
+	Bool,
+	Object
+}
+
+impl EpeeScalarType {
+	const fn from_type_code(type_code: u8) -> Result<Self> {
+		const types: [EpeeScalarType; 12] = [
+			EpeeScalarType::Int64,
+			EpeeScalarType::Int32,
+			EpeeScalarType::Int16,
+			EpeeScalarType::Int8,
+			EpeeScalarType::UInt64,
+			EpeeScalarType::UInt32,
+			EpeeScalarType::UInt16,
+			EpeeScalarType::UInt8,
+			EpeeScalarType::Double,
+			EpeeScalarType::Str,
+			EpeeScalarType::Bool,
+			EpeeScalarType::Object
+		];
+
+		let scalar_type_code = type_code & !constants::SERIALIZE_FLAG_ARRAY;
+
+		if scalar_type_code == 0 || scalar_type_code > 12 {
+			return Err(Error::new_no_msg(ErrorKind::BadTypeCode));
+		}
+
+		Ok(types[scalar_type_code as usize - 1])
+	}
+}
+
+#[derive(Debug)]
+struct EpeeEntryType {
+	scalar_type: EpeeScalarType,
+	is_array: bool
+}
+
+impl EpeeEntryType {
+	fn from_type_code(type_code: u8) -> Result<Self> {
+		let scalar = EpeeScalarType::from_type_code(type_code)?;
+		let is_array = 0 != (type_code & constants::SERIALIZE_FLAG_ARRAY);
+
+		Ok(Self {
+			scalar_type: scalar,
+			is_array: is_array
+		})
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Deserializer definition                                                   //
 ///////////////////////////////////////////////////////////////////////////////
 
+enum DeserState {
+	ExpectingSection(bool), // true if expecting root section, false otherwise 
+	ExpectingKey,
+	ExpectingEntry,
+	ExpectingScalar(EpeeScalarType),
+	Done
+}
+
 pub struct Deserializer<'de, R: Read> {
 	reader: &'de mut R,
-	deserializing_key: bool
+	state: DeserState,
 }
 
 impl<'de, R: Read> Deserializer<'de, R> {
 	///////////////////////////////////////////////////////////////////////////////
 	// Constructors                                                              //
 	///////////////////////////////////////////////////////////////////////////////
-	pub fn from_reader(reader: &'de mut R) -> Result<Self> {
-		let mut res = Deserializer { reader: reader, deserializing_key: false };
-		if res.validate_signature()? {
-			Ok(res)
-		} else {
-			Err(Error::new_no_msg(ErrorKind::ExpectedFormatSignature))
+	pub fn from_reader(reader: &'de mut R) -> Self {
+		Self {
+			reader: reader,
+			state: DeserState::ExpectingSection(true)
 		}
 	}
 
 	///////////////////////////////////////////////////////////////////////////////
-	// Reading methods                                                           //
+	// Reading helpers                                                           //
 	///////////////////////////////////////////////////////////////////////////////
 
 	fn read_raw(&mut self, buf: &mut [u8]) -> Result<()> {
@@ -71,22 +159,45 @@ impl<'de, R: Read> Deserializer<'de, R> {
 		}
 	}
 
-	fn read_type_code(&mut self) -> Result<(u8, bool)> {
-		let full_type_code = self.read_single()?; 
-		let is_array = (full_type_code & constants::SERIALIZE_FLAG_ARRAY) != 0;
-		let type_code = full_type_code & !constants::SERIALIZE_FLAG_ARRAY; // unset array bit
+	fn read_type_code(&mut self) -> Result<EpeeEntryType> {
+		EpeeEntryType::from_type_code(self.read_single()?)
+	}
 
-		if type_code >= constants::SERIALIZE_TYPE_INT64 && type_code <= constants::SERIALIZE_TYPE_OBJECT {
-			Ok((type_code, is_array))
+	fn deserialize_section_entry<V>(&mut self, visitor: V) -> Result<V::Value>
+	where
+		V: Visitor<'de>
+	{
+		let entry_type = self.read_type_code()?;
+
+		if entry_type.is_array {
+			visitor.visit_seq(EpeeCompound::new_array(&mut self, None, entry_type.scalar_type))
 		} else {
-			Err(Error::new_no_msg(ErrorKind::BadTypeCode))
+			self.deserialize_scalar(visitor)
 		}
 	}
 
-	fn validate_signature(&mut self) -> Result<bool> {
-		let mut sigbuf = [0u8; constants::PORTABLE_STORAGE_SIGNATURE_SIZE];
-		self.read_raw(&mut sigbuf)?;
-		Ok(sigbuf == constants::PORTABLE_STORAGE_SIGNATURE)
+	fn deserialize_scalar<V>(&mut self, visitor: V) -> Result<V::Value>
+	where
+		V: Visitor<'de>
+	{
+		if let DeserState::ExpectingScalar(scalar_type) = self.state {
+			match scalar_type {
+				EpeeScalarType::Int64 => self.deserialize_i64(visitor),
+				EpeeScalarType::Int32 => self.deserialize_i32(visitor),
+				EpeeScalarType::Int16 => self.deserialize_i16(visitor),
+				EpeeScalarType::Int8 => self.deserialize_i8(visitor),
+				EpeeScalarType::UInt64 => self.deserialize_u64(visitor),
+				EpeeScalarType::UInt32 => self.deserialize_u32(visitor),
+				EpeeScalarType::UInt16 => self.deserialize_u16(visitor),
+				EpeeScalarType::UInt8 => self.deserialize_u8(visitor),
+				EpeeScalarType::Double => self.deserialize_f64(visitor),
+				EpeeScalarType::Str => self.deserialize_str(visitor),
+				EpeeScalarType::Bool => self.deserialize_bool(visitor),
+				EpeeScalarType::Object => visitor.visit_map(EpeeCompound::new_section(&mut self, None))
+			}
+		} else {
+			err!(ExpectedScalar)
+		}
 	}
 }
 
@@ -106,11 +217,18 @@ macro_rules! deserialize_num {
 impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	type Error = Error;
 
-	fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
+	fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
-		unimplemented!()
+		match self.state {
+			DeserState::ExpectingSection(true) => visitor.visit_map(EpeeCompound::new_root_section(self, None)),
+			DeserState::ExpectingSection(false) => visitor.visit_map(EpeeCompound::new_section(self, None)),
+			DeserState::ExpectingKey => self.deserialize_str(visitor),
+			DeserState::ExpectingEntry => self.deserialize_section_entry(visitor),
+			DeserState::ExpectingScalar(_) => self.deserialize_scalar(visitor),
+			DeserState::Done => err_msg!(ExpectedEnd, "deserialize_any() was called after Deserializer was done")
+		}
 	}
 
 	fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
@@ -155,7 +273,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	where
 		V: Visitor<'de>,
 	{
-		if self.deserializing_key { // read string in as section key
+		if let DeserState::ExpectingKey = self.state { // read string in as section key
 			let mut strbuf = [0u8; 255];
 			let strlen = self.read_single()? as usize;
 			println!("{}", strlen);
@@ -246,31 +364,16 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	where
 		V: Visitor<'de>,
 	{
-		let (_element_type_code, is_array) = self.read_type_code()?;
-
-		if !is_array {
-			return Err(Error::new_no_msg(ErrorKind::ExpectedArray));
-		}
-
-		let array_varlen = VarInt::from_reader(self.reader)?;
-		let array_size: usize = array_varlen.try_into()?;
-
-		if array_size > constants::MAX_SECTION_KEY_SIZE {
-			return Err(Error::new_no_msg(ErrorKind::ArrayTooLong));
-		}
-
-		let seq_de = EpeeCompound::new_array(self, array_size); 
-		let value = visitor.visit_seq(seq_de)?;
-		// @TODO Check if sequence is done
-		/*
-		if seq_de.done() {
-			Ok(value)
+		if let DeserState::ExpectingEntry = self.state {
+			let entry_type = self.read_type_code()?;
+			if entry_type.is_array {
+				visitor.visit_seq(EpeeCompound::new_array(&mut self, None, entry_type.scalar_type))
+			} else {
+				err_msg!(ExpectedArray, "Instead found {:?}", entry_type)
+			}
 		} else {
-			Err(Error::new_no_msg(ErrorKind::ExpectedArrayEnd))
+			err_msg!(NotExpectingArray, "but deserialize_seq() was called")
 		}
-		*/
-
-		Ok(value)
 	}
 
 	fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
@@ -296,7 +399,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	where
 		V: Visitor<'de>,
 	{
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("Can't deserialize maps")))
+		visitor.visit_map(EpeeCompound::new_section(self, None))
 	}
 
 	fn deserialize_struct<V>(
@@ -308,7 +411,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	where
 		V: Visitor<'de>,
 	{
-		visitor.visit_map(EpeeCompound::new_section(self, fields.len()))
+		visitor.visit_map(EpeeCompound::new_section(self, Some(fields.len())))
 	}
 
 	fn deserialize_enum<V>(
@@ -341,24 +444,76 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 struct EpeeCompound<'a, 'de: 'a, R: Read> {
 	deserializer: &'a mut Deserializer<'de, R>,
 	remaining: usize,
-	//type_code: u8
+	started: bool,
+	size_hint: Option<usize>, // size hint provided at compile-time (used by structs & tuples)
+	array_type: Option<EpeeScalarType>, // if == None, then this compound is a section,
+	is_root: bool
 }
 
 impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
-	fn new_array(deserializer: &'a mut Deserializer<'de, R>, array_len: usize) -> Self {
+	fn new_section(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>) -> Self {
 		Self {
 			deserializer: deserializer,
-			remaining: array_len,
-			//type_code: type_code
+			remaining: 0,
+			started: false,
+			size_hint: size_hint,
+			array_type: None,
+			is_root: false
 		}
 	}
 
-	fn new_section(deserializer: &'a mut Deserializer<'de, R>, section_len: usize) -> Self {
+	fn new_root_section(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>) -> Self {
 		Self {
 			deserializer: deserializer,
-			remaining: section_len,
-			//type_code: constants::SERIALIZE_TYPE_UNKNOWN
+			remaining: 0,
+			started: false,
+			size_hint: size_hint,
+			array_type: None,
+			is_root: true
 		}
+	}
+
+	fn new_array(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>, array_type: EpeeScalarType) -> Self {
+		Self {
+			deserializer: deserializer,
+			remaining: 0,
+			started: false,
+			size_hint: size_hint,
+			array_type: Some(array_type),
+			is_root: false
+		}
+	}
+
+	fn validate_signature(&mut self) -> Result<bool> {
+		let mut sigbuf = [0u8; constants::PORTABLE_STORAGE_SIGNATURE_SIZE];
+		self.deserializer.read_raw(&mut sigbuf)?;
+		Ok(sigbuf == constants::PORTABLE_STORAGE_SIGNATURE)
+	}
+
+	fn start_if_necessary(&mut self) -> Result<()> {
+		if self.started {
+			return Ok(());
+		}
+
+		if self.is_root {
+			let good_signature = self.validate_signature()?;
+			if !good_signature {
+				return err!(ExpectedFormatSignature);
+			}
+		}
+
+		// Get length from stream
+		self.remaining = VarInt::from_reader(self.deserializer.reader)?.try_into()?;
+
+		if let Some(size_hint) = self.size_hint {
+			if size_hint != self.remaining {
+				return err_msg!(SizeHintMismatch, "Deserialized length {} does not match size hint {}", self.remaining, size_hint);
+			}
+		}
+
+		self.started = true;
+
+		Ok(())
 	}
 
 	fn done(&self) -> bool {
@@ -374,13 +529,26 @@ impl<'de, 'a, R: Read> SeqAccess<'de> for EpeeCompound<'a, 'de, R> {
 	where
 		T: DeserializeSeed<'de>
 	{
+		self.start_if_necessary()?;
+
 		if self.done() {
 			return Ok(None);
 		}
 
 		self.remaining -= 1;
 
-		seed.deserialize(&mut *self.deserializer).map(Some)
+		if let Some(array_type) = self.array_type {
+			self.deserializer.state = DeserState::ExpectingScalar(array_type);
+			let res = seed.deserialize(&mut *self.deserializer).map(Some);
+
+			if self.done() {
+				self.deserializer.state = DeserState::ExpectingKey;
+			}
+
+			res
+		} else {
+			err!(CompoundMissingArrayType)
+		}
 	}
 }
 
@@ -391,22 +559,26 @@ impl<'de, 'a, R: Read> MapAccess<'de> for EpeeCompound<'a, 'de, R> {
 	where
 		K: DeserializeSeed<'de>,
 	{
+		self.start_if_necessary()?;
+
 		if self.done() {
 			return Ok(None)
 		}
 
 		self.remaining -=1;
 
-		self.deserializer.deserializing_key = true;
-		seed.deserialize(&mut *self.deserializer).map(Some)
+		self.deserializer.state = DeserState::ExpectingKey;
+		let res = seed.deserialize(&mut *self.deserializer).map(Some);
+		self.deserializer.state = DeserState::ExpectingEntry;
+
+		res
 	}
 
 	fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
 	where
 		V: DeserializeSeed<'de>,
 	{
-		self.deserializer.deserializing_key = false;
-		self.deserializer.read_single()?; // consume type code
+		self.deserializer.state = DeserState::ExpectingEntry;
 		seed.deserialize(&mut *self.deserializer)
 	}
 }

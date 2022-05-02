@@ -27,8 +27,13 @@ pub enum ErrorKind {
 	BadTypeCode,
 	ExpectedArray,
 	ExpectedArrayEnd,
+	ExpectedFormatSignature,
+	ExpectedEnd,
+	ExpectedScalar,
+	NotExpectingArray,
 	BadUnicodeScalar,
-	ExpectedFormatSignature
+	SizeHintMismatch,
+	CompoundMissingArrayType,
 }
 
 #[derive(Clone, Debug, PartialEq)]
