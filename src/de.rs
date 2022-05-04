@@ -223,7 +223,6 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 	where
 		V: Visitor<'de>,
 	{
-		println!("any called");
 		match self.state {
 			DeserState::ExpectingSection(true) => visitor.visit_map(EpeeCompound::new_root_section(self, None)),
 			DeserState::ExpectingSection(false) => visitor.visit_map(EpeeCompound::new_section(self, None)),
@@ -279,13 +278,11 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 		if let DeserState::ExpectingKey = self.state { // read string in as section key
 			let mut strbuf = [0u8; 255];
 			let strlen = self.read_single()? as usize;
-			println!("keylen: {}", strlen);
 			let strslice = &mut strbuf[..strlen];
 			self.read_raw(strslice)?;
-			println!("{:?}", strslice);
 			match std::str::from_utf8(strslice) {
 				Ok(s) => visitor.visit_str(s),
-				Err(_) => Err(Error::new_no_msg(ErrorKind::StringBadEncoding))
+				Err(_) => err_msg!(StringBadEncoding, "encoding error while expecting key on slice: {:?}", strslice)
 			}
 		} else { // Read as normal string
 			let varlen = VarInt::from_reader(self.reader)?;
@@ -299,7 +296,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 
 			match std::str::from_utf8(strbuf.as_slice()) {
 				Ok(s) => visitor.visit_str(s),
-				Err(_) => Err(Error::new_no_msg(ErrorKind::StringBadEncoding))
+				Err(_) => visitor.visit_bytes(&strbuf)
 			}
 		}
 	}
@@ -496,7 +493,6 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 	}
 
 	fn validate_signature(&mut self) -> Result<bool> {
-		println!("Validating signature");
 		let mut sigbuf = [0u8; constants::PORTABLE_STORAGE_SIGNATURE_SIZE];
 		self.deserializer.read_raw(&mut sigbuf)?;
 		Ok(sigbuf == constants::PORTABLE_STORAGE_SIGNATURE)
@@ -516,7 +512,6 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 
 		// Get length from stream
 		self.remaining = VarInt::from_reader(self.deserializer.reader)?.try_into()?;
-		println!("compound length {}", self.remaining);
 
 		if let Some(size_hint) = self.size_hint {
 			if size_hint != self.remaining {
