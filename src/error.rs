@@ -31,6 +31,7 @@ pub enum ErrorKind {
 	ExpectedEnd,
 	ExpectedScalar,
 	NotExpectingArray,
+	NotExpectingSection,
 	BadUnicodeScalar,
 	SizeHintMismatch,
 	CompoundMissingArrayType,

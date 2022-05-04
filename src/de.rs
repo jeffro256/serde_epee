@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use serde::Deserialize;
-use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, Deserializer, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
 use crate::constants;
 use crate::error::{Error, ErrorKind, Result};
@@ -33,7 +33,7 @@ where
 	T: Deserialize<'a>,
 	R: Read
 {
-	let mut deserializer = Deserializer::from_reader(reader);
+	let mut deserializer = EpeeDeserializer::from_reader(reader);
 	T::deserialize(&mut deserializer)
 }
 
@@ -42,7 +42,7 @@ pub fn from_bytes<'a, T>(bytes: &'a mut &[u8]) -> Result<T>
 where
 	T: Deserialize<'a>,
 {
-	let mut deserializer = Deserializer::from_reader(bytes);
+	let mut deserializer = EpeeDeserializer::from_reader(bytes);
 	T::deserialize(&mut deserializer)
 }
 
@@ -50,7 +50,7 @@ where
 // EPEE Type definitions                                                     //
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum EpeeScalarType {
 	Int64,
 	Int32,
@@ -67,7 +67,7 @@ enum EpeeScalarType {
 }
 
 impl EpeeScalarType {
-	const fn from_type_code(type_code: u8) -> Result<Self> {
+	fn from_type_code(type_code: u8) -> Result<Self> {
 		const types: [EpeeScalarType; 12] = [
 			EpeeScalarType::Int64,
 			EpeeScalarType::Int32,
@@ -86,7 +86,7 @@ impl EpeeScalarType {
 		let scalar_type_code = type_code & !constants::SERIALIZE_FLAG_ARRAY;
 
 		if scalar_type_code == 0 || scalar_type_code > 12 {
-			return Err(Error::new_no_msg(ErrorKind::BadTypeCode));
+			return err_msg!(BadTypeCode, "Invalid value: {}", type_code);
 		}
 
 		Ok(types[scalar_type_code as usize - 1])
@@ -115,6 +115,7 @@ impl EpeeEntryType {
 // Deserializer definition                                                   //
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 enum DeserState {
 	ExpectingSection(bool), // true if expecting root section, false otherwise 
 	ExpectingKey,
@@ -123,12 +124,12 @@ enum DeserState {
 	Done
 }
 
-pub struct Deserializer<'de, R: Read> {
+pub struct EpeeDeserializer<'de, R: Read> {
 	reader: &'de mut R,
 	state: DeserState,
 }
 
-impl<'de, R: Read> Deserializer<'de, R> {
+impl<'de, R: Read> EpeeDeserializer<'de, R> {
 	///////////////////////////////////////////////////////////////////////////////
 	// Constructors                                                              //
 	///////////////////////////////////////////////////////////////////////////////
@@ -170,8 +171,9 @@ impl<'de, R: Read> Deserializer<'de, R> {
 		let entry_type = self.read_type_code()?;
 
 		if entry_type.is_array {
-			visitor.visit_seq(EpeeCompound::new_array(&mut self, None, entry_type.scalar_type))
+			visitor.visit_seq(EpeeCompound::new_array(self, None, entry_type.scalar_type))
 		} else {
+			self.state = DeserState::ExpectingScalar(entry_type.scalar_type);
 			self.deserialize_scalar(visitor)
 		}
 	}
@@ -193,7 +195,7 @@ impl<'de, R: Read> Deserializer<'de, R> {
 				EpeeScalarType::Double => self.deserialize_f64(visitor),
 				EpeeScalarType::Str => self.deserialize_str(visitor),
 				EpeeScalarType::Bool => self.deserialize_bool(visitor),
-				EpeeScalarType::Object => visitor.visit_map(EpeeCompound::new_section(&mut self, None))
+				EpeeScalarType::Object => visitor.visit_map(EpeeCompound::new_section(self, None))
 			}
 		} else {
 			err!(ExpectedScalar)
@@ -214,13 +216,14 @@ macro_rules! deserialize_num {
 	}
 }
 
-impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
+impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R> {
 	type Error = Error;
 
 	fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
+		println!("any called");
 		match self.state {
 			DeserState::ExpectingSection(true) => visitor.visit_map(EpeeCompound::new_root_section(self, None)),
 			DeserState::ExpectingSection(false) => visitor.visit_map(EpeeCompound::new_section(self, None)),
@@ -276,7 +279,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 		if let DeserState::ExpectingKey = self.state { // read string in as section key
 			let mut strbuf = [0u8; 255];
 			let strlen = self.read_single()? as usize;
-			println!("{}", strlen);
+			println!("keylen: {}", strlen);
 			let strslice = &mut strbuf[..strlen];
 			self.read_raw(strslice)?;
 			println!("{:?}", strslice);
@@ -367,7 +370,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 		if let DeserState::ExpectingEntry = self.state {
 			let entry_type = self.read_type_code()?;
 			if entry_type.is_array {
-				visitor.visit_seq(EpeeCompound::new_array(&mut self, None, entry_type.scalar_type))
+				visitor.visit_seq(EpeeCompound::new_array(self, None, entry_type.scalar_type))
 			} else {
 				err_msg!(ExpectedArray, "Instead found {:?}", entry_type)
 			}
@@ -399,7 +402,15 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	where
 		V: Visitor<'de>,
 	{
-		visitor.visit_map(EpeeCompound::new_section(self, None))
+		if let DeserState::ExpectingSection(expecting_root) = self.state {
+			if expecting_root {
+				visitor.visit_map(EpeeCompound::new_root_section(self, None))
+			} else {
+				visitor.visit_map(EpeeCompound::new_section(self, None))
+			}
+		} else {
+			err_msg!(NotExpectingSection, "In state {:?}, asked to deserialize map", self.state)
+		}
 	}
 
 	fn deserialize_struct<V>(
@@ -442,7 +453,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 }
 
 struct EpeeCompound<'a, 'de: 'a, R: Read> {
-	deserializer: &'a mut Deserializer<'de, R>,
+	deserializer: &'a mut EpeeDeserializer<'de, R>,
 	remaining: usize,
 	started: bool,
 	size_hint: Option<usize>, // size hint provided at compile-time (used by structs & tuples)
@@ -451,7 +462,7 @@ struct EpeeCompound<'a, 'de: 'a, R: Read> {
 }
 
 impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
-	fn new_section(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>) -> Self {
+	fn new_section(deserializer: &'a mut EpeeDeserializer<'de, R>, size_hint: Option<usize>) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: 0,
@@ -462,7 +473,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 		}
 	}
 
-	fn new_root_section(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>) -> Self {
+	fn new_root_section(deserializer: &'a mut EpeeDeserializer<'de, R>, size_hint: Option<usize>) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: 0,
@@ -473,7 +484,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 		}
 	}
 
-	fn new_array(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>, array_type: EpeeScalarType) -> Self {
+	fn new_array(deserializer: &'a mut EpeeDeserializer<'de, R>, size_hint: Option<usize>, array_type: EpeeScalarType) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: 0,
@@ -485,6 +496,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 	}
 
 	fn validate_signature(&mut self) -> Result<bool> {
+		println!("Validating signature");
 		let mut sigbuf = [0u8; constants::PORTABLE_STORAGE_SIGNATURE_SIZE];
 		self.deserializer.read_raw(&mut sigbuf)?;
 		Ok(sigbuf == constants::PORTABLE_STORAGE_SIGNATURE)
@@ -504,6 +516,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 
 		// Get length from stream
 		self.remaining = VarInt::from_reader(self.deserializer.reader)?.try_into()?;
+		println!("compound length {}", self.remaining);
 
 		if let Some(size_hint) = self.size_hint {
 			if size_hint != self.remaining {
