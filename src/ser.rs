@@ -10,12 +10,12 @@ use crate::varint::VarInt;
 // User functions                                                            //
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn serialize_into<T, W>(writer: &mut W, value: &T) -> Result<()>
+pub fn to_writer<T, W>(mut writer: W, value: &T) -> Result<()>
 where
 	T: Serialize,
 	W: Write
 {
-	let mut serializer = Serializer::new_unstarted(writer)?;
+	let mut serializer = Serializer::new_unstarted(&mut writer)?;
 	value.serialize(&mut serializer)
 }
 
@@ -31,7 +31,7 @@ where
 T: Serialize
 {
 	let mut sink_counter = ByteCounter::new(io::sink());
-	serialize_into(&mut sink_counter, value)?;
+	to_writer(sink_counter.by_ref(), value)?;
 	Ok(sink_counter.bytes_written())
 }
 

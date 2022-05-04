@@ -25,15 +25,15 @@ macro_rules! err_msg {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// User functions                                                            //
+// User functions  (use these if you're new here)                            //
 ///////////////////////////////////////////////////////////////////////////////
 
-pub fn deserialize_from<'a, T, R>(reader: &'a mut R) -> Result<T>
+pub fn from_reader<T, R>(mut reader: R) -> Result<T>
 where
-	T: Deserialize<'a>,
+	T: de::DeserializeOwned,
 	R: Read
 {
-	let mut deserializer = EpeeDeserializer::from_reader(reader);
+	let mut deserializer = EpeeDeserializer::from_reader(&mut reader);
 	T::deserialize(&mut deserializer)
 }
 

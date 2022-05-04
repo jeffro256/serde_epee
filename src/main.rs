@@ -43,7 +43,7 @@ fn main() -> serde_epee::Result<()> {
     serde_epee::serialize_into(&mut outf, &example_data)*/
 
     let mut inf = File::open("epee_example.dat")?;
-    let section: Section = serde_epee::deserialize_from(&mut inf)?;
+    let section: Section = serde_epee::from_reader(inf)?;
 
     println!("Result: {:?}", section);
 
