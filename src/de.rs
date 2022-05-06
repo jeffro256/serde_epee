@@ -331,11 +331,11 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 		visitor.visit_some(self)
 	}
 
-	fn deserialize_unit<V>(self, _visitor: V) -> Result<V::Value>
+	fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("Can't deserialize anonymous units")))
+		visitor.visit_unit()
 	}
 
 	fn deserialize_unit_struct<V>(
