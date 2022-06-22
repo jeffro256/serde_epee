@@ -1,3 +1,5 @@
+// @TODO Make sure all deserialize_x functions take state into account state so type values are consumed
+
 use std::io::Read;
 
 use serde::Deserialize;
@@ -37,7 +39,6 @@ where
 	T::deserialize(&mut deserializer)
 }
 
-// @TODO: Look into implementing Deserializer for DeserializeOwned to reduce copies
 pub fn from_bytes<'a, T>(bytes: &'a mut &[u8]) -> Result<T>
 where
 	T: Deserialize<'a>,
@@ -50,7 +51,7 @@ where
 // EPEE Type definitions                                                     //
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 enum EpeeScalarType {
 	Int64,
 	Int32,
@@ -68,7 +69,7 @@ enum EpeeScalarType {
 
 impl EpeeScalarType {
 	fn from_type_code(type_code: u8) -> Result<Self> {
-		const types: [EpeeScalarType; 12] = [
+		const TYPES: [EpeeScalarType; 12] = [
 			EpeeScalarType::Int64,
 			EpeeScalarType::Int32,
 			EpeeScalarType::Int16,
@@ -89,9 +90,36 @@ impl EpeeScalarType {
 			return err_msg!(BadTypeCode, "Invalid value: {}", type_code);
 		}
 
-		Ok(types[scalar_type_code as usize - 1])
+		Ok(TYPES[scalar_type_code as usize - 1])
 	}
 }
+
+trait AssociatedEpeeScalarType {
+	fn associated_epee_scalar_type() -> EpeeScalarType;
+}
+
+macro_rules! impl_ass_scalar {
+	( $type:ty, $epeevariant:expr ) => {
+		impl AssociatedEpeeScalarType for $type {
+			fn associated_epee_scalar_type() -> EpeeScalarType {
+				$epeevariant
+			}
+		}
+	}
+}
+
+impl_ass_scalar!{i64,    EpeeScalarType::Int64}
+impl_ass_scalar!{i32,    EpeeScalarType::Int32}
+impl_ass_scalar!{i16,    EpeeScalarType::Int16}
+impl_ass_scalar!{i8,     EpeeScalarType::Int8}
+impl_ass_scalar!{u64,    EpeeScalarType::UInt64}
+impl_ass_scalar!{u32,    EpeeScalarType::UInt32}
+impl_ass_scalar!{u16,    EpeeScalarType::UInt16}
+impl_ass_scalar!{u8,     EpeeScalarType::UInt8}
+impl_ass_scalar!{f64,    EpeeScalarType::Double}
+impl_ass_scalar!{f32,    EpeeScalarType::Double}
+impl_ass_scalar!{String, EpeeScalarType::Str}
+impl_ass_scalar!{bool,   EpeeScalarType::Bool}
 
 #[derive(Debug)]
 struct EpeeEntryType {
@@ -148,7 +176,8 @@ impl<'de, R: Read> EpeeDeserializer<'de, R> {
 		let read_res = self.reader.read_exact(buf);
 		match read_res { 
 			Ok(_) => Ok(()),
-			Err(ioe) => Err(ioe.into())
+			//Err(ioe) => Err(ioe.into())
+			Err(ioe) => panic!("Error reading {} bytes", buf.len())
 		}
 	}
 
@@ -204,14 +233,42 @@ impl<'de, R: Read> EpeeDeserializer<'de, R> {
 }
 
 macro_rules! deserialize_num {
-	( $sfname:ident, $vfname:ident, $numtype:ty, $numsize:expr ) => {
+	( $sfname:ident, $vfname:ident, $numtype:ty ) => {
 		fn $sfname<V>(self, visitor: V) -> Result<V::Value>
 		where
 			V: Visitor<'de>
 		{
-			let mut le_bytes = [0u8; $numsize];
-			self.read_raw(&mut le_bytes)?;
-			visitor.$vfname(<$numtype>::from_le_bytes(le_bytes))
+			if let DeserState::ExpectingEntry | DeserState::ExpectingScalar(_) = self.state {
+				if let DeserState::ExpectingEntry = self.state {
+					// consume and check type code
+					let actual_type_code = self.read_type_code()?.scalar_type;
+					let expected_type_code = <$numtype>::associated_epee_scalar_type();
+					if actual_type_code != expected_type_code {
+						return err_msg!(
+							TypeMismatch,
+							"Found type code for {:?} while trying to deserialize number type {:?}",
+							actual_type_code,
+							expected_type_code
+						)
+					}
+				}
+
+				const NBYTES: usize = std::mem::size_of::<$numtype>();
+				let mut le_bytes = [0u8; NBYTES];
+				self.read_raw(&mut le_bytes)?;
+				let num = <$numtype>::from_le_bytes(le_bytes);
+				println!("deser num {}", num);
+				let visit_res = visitor.$vfname(num);
+				self.state = DeserState::ExpectingEntry;
+				visit_res	
+			} else {
+				return err_msg!(
+					NotExpectingScalar,
+					"Trying to deserialize {:?} while state is {:?}",
+					<$numtype>::associated_epee_scalar_type(),
+					self.state
+				)
+			}
 		}
 	}
 }
@@ -241,15 +298,15 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 		visitor.visit_bool(bool_byte != 0)
 	}
 
-	deserialize_num!{deserialize_u8,  visit_u8,  u8,  1}
-	deserialize_num!{deserialize_u16, visit_u16, u16, 2}
-	deserialize_num!{deserialize_u32, visit_u32, u32, 4}
-	deserialize_num!{deserialize_u64, visit_u64, u64, 8}
-	deserialize_num!{deserialize_i8,  visit_i8,  i8,  1}
-	deserialize_num!{deserialize_i16, visit_i16, i16, 2}
-	deserialize_num!{deserialize_i32, visit_i32, i32, 4}
-	deserialize_num!{deserialize_i64, visit_i64, i64, 8}
-	deserialize_num!{deserialize_f64, visit_f64, f64, 8}
+	deserialize_num!{deserialize_u8,  visit_u8,  u8 }
+	deserialize_num!{deserialize_u16, visit_u16, u16}
+	deserialize_num!{deserialize_u32, visit_u32, u32}
+	deserialize_num!{deserialize_u64, visit_u64, u64}
+	deserialize_num!{deserialize_i8,  visit_i8,  i8 }
+	deserialize_num!{deserialize_i16, visit_i16, i16}
+	deserialize_num!{deserialize_i32, visit_i32, i32}
+	deserialize_num!{deserialize_i64, visit_i64, i64}
+	deserialize_num!{deserialize_f64, visit_f64, f64}
 
 	fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
 	where
@@ -278,13 +335,30 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 		if let DeserState::ExpectingKey = self.state { // read string in as section key
 			let mut strbuf = [0u8; 255];
 			let strlen = self.read_single()? as usize;
+			if strlen == 0 {
+				return err_msg!(EmptySectionKey, "section key length can not be zero!");
+			}
 			let strslice = &mut strbuf[..strlen];
 			self.read_raw(strslice)?;
 			match std::str::from_utf8(strslice) {
 				Ok(s) => visitor.visit_str(s),
 				Err(_) => err_msg!(StringBadEncoding, "encoding error while expecting key on slice: {:?}", strslice)
 			}
-		} else { // Read as normal string
+		} else if let DeserState::ExpectingEntry | DeserState::ExpectingScalar(_) = self.state { // Read as normal string
+			if let DeserState::ExpectingEntry = self.state {
+				// consume and check type code
+				let actual_type_code = self.read_type_code()?.scalar_type;
+				let expected_type_code = EpeeScalarType::Str;
+				if actual_type_code != expected_type_code {
+					return err_msg!(
+						TypeMismatch,
+						"Found type code for {:?} while trying to deserialize type {:?}",
+						actual_type_code,
+						expected_type_code
+					)
+				}
+			}
+
 			let varlen = VarInt::from_reader(self.reader)?;
 			let strsize: usize = varlen.try_into()?;
 			if strsize > constants::MAX_STRING_LEN_POSSIBLE {
@@ -298,6 +372,12 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 				Ok(s) => visitor.visit_str(s),
 				Err(_) => visitor.visit_bytes(&strbuf)
 			}
+		} else {
+			return err_msg!(
+				NotExpectingScalar,
+				"Trying to deserializes string while state is {:?}",
+				self.state
+			)
 		}
 	}
 
@@ -413,13 +493,14 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 	fn deserialize_struct<V>(
 		self,
 		_name: &'static str,
-		fields: &'static [&'static str],
+		_fields: &'static [&'static str],
 		visitor: V,
 	) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
-		visitor.visit_map(EpeeCompound::new_section(self, Some(fields.len())))
+		// @TODO specialize for structs
+		self.deserialize_map(visitor)
 	}
 
 	fn deserialize_enum<V>(
@@ -587,6 +668,10 @@ impl<'de, 'a, R: Read> MapAccess<'de> for EpeeCompound<'a, 'de, R> {
 		V: DeserializeSeed<'de>,
 	{
 		self.deserializer.state = DeserState::ExpectingEntry;
-		seed.deserialize(&mut *self.deserializer)
+		let res = seed.deserialize(&mut *self.deserializer);
+		if self.is_root && self.remaining == 0 {
+			self.deserializer.state = DeserState::Done;
+		}
+		res
 	}
 }

@@ -32,9 +32,12 @@ pub enum ErrorKind {
 	ExpectedScalar,
 	NotExpectingArray,
 	NotExpectingSection,
+	NotExpectingScalar,
 	BadUnicodeScalar,
 	SizeHintMismatch,
 	CompoundMissingArrayType,
+	EmptySectionKey,
+	TypeMismatch,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -89,6 +92,12 @@ impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
 	fn from(ioe: std::io::Error) -> Self {
-		Self { kind: ErrorKind::IOError(ioe.kind()), msg: String::from("IOError") }
+		Self {
+			kind: ErrorKind::IOError(ioe.kind()),
+			msg: match ioe.into_inner() {
+				None => "IOError".to_string(),
+				Some(inner_err) => inner_err.to_string()
+			}
+		}
 	}
 }
