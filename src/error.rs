@@ -101,3 +101,19 @@ impl From<std::io::Error> for Error {
 		}
 	}
 }
+
+// Convenience macro
+#[macro_export]
+macro_rules! epee_err {
+	($kind:ident) => (
+		Err(Error::new_no_msg(ErrorKind::$kind))
+	);
+	($kind:ident, $fmt:expr, $($fmt_args:expr), *) => (
+		Err(Error::new(ErrorKind::$kind, format!($fmt, $($fmt_args), *)))
+	);
+	($kind:ident, $msg:expr) => (
+		Err(Error::new(ErrorKind::$kind, $msg.to_string()))
+	)
+}
+
+pub(crate) use epee_err;

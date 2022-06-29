@@ -56,31 +56,6 @@ impl VarInt {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Implement Serialize/Deserialize                                           //
-///////////////////////////////////////////////////////////////////////////////
-
-// DOESNT WORK BECAUSE serialize_bytes may encode type information
-/*impl ser::Serialize for VarInt {
-	fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-	where
-		S: ser::Serializer,
-	{
-		let (var_mask, byte_size) = if self.value <= MAX_BYTE_VAL {
-			(0b00, 1)
-		} else if self.value <= MAX_WORD_VAL {
-			(0b01, 2)
-		} else if self.value <= MAX_DWORD_VAL {
-			(0b10, 4)
-		} else {
-			(0b11, 8)
-		};
-
-		let encoded = ((self.value << 2) & var_mask).to_le_bytes();
-		serializer.serialize_bytes(&encoded[..byte_size])
-	}
-}*/
-
-///////////////////////////////////////////////////////////////////////////////
 // Integer conversions                                                       //
 ///////////////////////////////////////////////////////////////////////////////
 

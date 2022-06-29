@@ -23,5 +23,5 @@ pub const SERIALIZE_FLAG_ARRAY  :u8 =    0x80;
 
 pub const MAX_NUM_SECTION_FIELDS:usize = 10000; // I made this limit up, not related to Monero/EPEE
 pub const MAX_SECTION_KEY_SIZE:  usize =  255;
-pub const MAX_STRING_LEN_POSSIBLE:usize = 2000000000; //do not let string be so big
+pub const MAX_STRING_LEN_POSSIBLE:usize = 2000000000; // "do not let string be so big"
 pub const MAX_STRING_BUFFER_SIZE:usize = 4096; // In order to prevent memory allocation spam
