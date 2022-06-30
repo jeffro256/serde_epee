@@ -2,10 +2,10 @@ use std::convert::{From, Into, TryFrom, TryInto};
 
 use crate::error::{Error, ErrorKind, Result};
 
-const MAX_BYTE_VAL:   u64 =                  63;
-const MAX_WORD_VAL:   u64 =               16383;
-const MAX_DWORD_VAL:  u64 =          1073741823;
-const MAX_QWORD_VAL:  u64 = 4611686018427387903; 
+const MAX_BYTE_VAL:   u64 = (1 <<  6) - 1;
+const MAX_WORD_VAL:   u64 = (1 << 14) - 1;
+const MAX_DWORD_VAL:  u64 = (1 << 30) - 1;
+const MAX_QWORD_VAL:  u64 = (1 << 62) - 1;
 const MAX_VARINT_VAL: u64 = MAX_QWORD_VAL;
 
 #[derive(Debug)]

@@ -3,7 +3,7 @@
 use std::io::Read;
 
 use serde::Deserialize;
-use serde::de::{self, Deserializer, DeserializeSeed, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 
 use crate::constants;
 use crate::error::{Error, ErrorKind, Result, epee_err};
@@ -18,7 +18,7 @@ where
 	T: de::DeserializeOwned,
 	R: Read
 {
-	let mut deserializer = EpeeDeserializer::from_reader(&mut reader);
+	let mut deserializer = Deserializer::from_reader(&mut reader);
 	T::deserialize(&mut deserializer)
 }
 
@@ -26,7 +26,7 @@ pub fn from_bytes<'a, T>(bytes: &'a mut &[u8]) -> Result<T>
 where
 	T: Deserialize<'a>,
 {
-	let mut deserializer = EpeeDeserializer::from_reader(bytes);
+	let mut deserializer = Deserializer::from_reader(bytes);
 	T::deserialize(&mut deserializer)
 }
 
@@ -108,7 +108,7 @@ enum DeserState {
 	Done
 }
 
-pub struct EpeeDeserializer<'de, R: Read> {
+pub struct Deserializer<'de, R: Read> {
 	reader: &'de mut R,
 	state: DeserState,
 }
@@ -141,7 +141,7 @@ macro_rules! define_simple_deser {
 	}
 }
 
-impl<'de, R: Read> EpeeDeserializer<'de, R> {
+impl<'de, R: Read> Deserializer<'de, R> {
 	///////////////////////////////////////////////////////////////////////////////
 	// Constructors                                                              //
 	///////////////////////////////////////////////////////////////////////////////
@@ -278,7 +278,7 @@ impl<'de, R: Read> EpeeDeserializer<'de, R> {
 	define_parse_num!{parse_f64, f64}
 }
 
-impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R> {
+impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	type Error = Error;
 
 	fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -425,7 +425,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut EpeeDeserializer<'de, R
 }
 
 struct EpeeCompound<'a, 'de: 'a, R: Read> {
-	deserializer: &'a mut EpeeDeserializer<'de, R>,
+	deserializer: &'a mut Deserializer<'de, R>,
 	remaining: usize,
 	started: bool,
 	size_hint: Option<usize>, // size hint provided at compile-time (used by structs & tuples)
@@ -434,7 +434,7 @@ struct EpeeCompound<'a, 'de: 'a, R: Read> {
 }
 
 impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
-	fn new_section(deserializer: &'a mut EpeeDeserializer<'de, R>, size_hint: Option<usize>) -> Self {
+	fn new_section(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: 0,
@@ -445,7 +445,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 		}
 	}
 
-	fn new_root_section(deserializer: &'a mut EpeeDeserializer<'de, R>, size_hint: Option<usize>) -> Self {
+	fn new_root_section(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: 0,
@@ -456,7 +456,7 @@ impl<'de, 'a, R: Read> EpeeCompound<'a, 'de, R> {
 		}
 	}
 
-	fn new_array(deserializer: &'a mut EpeeDeserializer<'de, R>, size_hint: Option<usize>, array_type: EpeeScalarType) -> Self {
+	fn new_array(deserializer: &'a mut Deserializer<'de, R>, size_hint: Option<usize>, array_type: EpeeScalarType) -> Self {
 		Self {
 			deserializer: deserializer,
 			remaining: 0,
