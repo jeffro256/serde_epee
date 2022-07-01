@@ -193,18 +193,18 @@ impl<'de, R: Read> Deserializer<'de, R> {
 	{
 		if let DeserState::ExpectingScalar(scalar_type) = self.state {
 			match scalar_type {
-				EpeeScalarType::Int64  => visitor.visit_i64 (self.parse_i64()?),
-				EpeeScalarType::Int32  => visitor.visit_i32 (self.parse_i32()?),
-				EpeeScalarType::Int16  => visitor.visit_i16 (self.parse_i16()?),
-				EpeeScalarType::Int8   => visitor.visit_i8  (self.parse_i8()?),
-				EpeeScalarType::UInt64 => visitor.visit_u64 (self.parse_u64()?),
-				EpeeScalarType::UInt32 => visitor.visit_u32 (self.parse_u32()?),
-				EpeeScalarType::UInt16 => visitor.visit_u16 (self.parse_u16()?),
-				EpeeScalarType::UInt8  => visitor.visit_u8  (self.parse_u8()?),
-				EpeeScalarType::Double => visitor.visit_f64 (self.parse_f64()?),
-				EpeeScalarType::Str    => visitor.visit_str (self.parse_string_value()?.as_str()),
-				EpeeScalarType::Bool   => visitor.visit_bool(self.parse_bool()?),
-				EpeeScalarType::Object => visitor.visit_map (EpeeCompound::new_section(self, None))
+				EpeeScalarType::Int64  => visitor.visit_i64   (self.parse_i64()?),
+				EpeeScalarType::Int32  => visitor.visit_i32   (self.parse_i32()?),
+				EpeeScalarType::Int16  => visitor.visit_i16   (self.parse_i16()?),
+				EpeeScalarType::Int8   => visitor.visit_i8    (self.parse_i8()?),
+				EpeeScalarType::UInt64 => visitor.visit_u64   (self.parse_u64()?),
+				EpeeScalarType::UInt32 => visitor.visit_u32   (self.parse_u32()?),
+				EpeeScalarType::UInt16 => visitor.visit_u16   (self.parse_u16()?),
+				EpeeScalarType::UInt8  => visitor.visit_u8    (self.parse_u8()?),
+				EpeeScalarType::Double => visitor.visit_f64   (self.parse_f64()?),
+				EpeeScalarType::Str    => visitor.visit_bytes (self.parse_string_value()?.as_slice()),
+				EpeeScalarType::Bool   => visitor.visit_bool  (self.parse_bool()?),
+				EpeeScalarType::Object => visitor.visit_map   (EpeeCompound::new_section(self, None))
 			}
 		} else {
 			epee_err!(ExpectedScalar)
@@ -251,7 +251,7 @@ impl<'de, R: Read> Deserializer<'de, R> {
 
 	// @TODO construct string reference with class lifetime to avoid copying
 	// for normal string values of type SERIALIZE_TYPE_STRING
-	fn parse_string_value(&mut self) -> Result<String> {
+	fn parse_string_value(&mut self) -> Result<Vec<u8>> {
 		let varlen = VarInt::from_reader(self.reader)?;
 		let strsize: usize = varlen.try_into()?;
 		if strsize > constants::MAX_STRING_LEN_POSSIBLE {
@@ -261,10 +261,7 @@ impl<'de, R: Read> Deserializer<'de, R> {
 		// @TODO: We may not want to allocate the whole string in advance for resource security against bad connections
 		let mut strbuf = vec![0u8; strsize];
 		self.read_raw(strbuf.as_mut_slice())?;
-		match String::from_utf8(strbuf) {
-			Ok(s) => Ok(s),
-			Err(_) => epee_err!(StringBadEncoding, "UTF-8 encoding error while parsing byte buffer for string value")
-		}
+		Ok(strbuf)
 	}
 
 	define_parse_num!{parse_u8, u8}
