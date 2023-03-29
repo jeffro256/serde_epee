@@ -6,7 +6,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum ErrorKind {
-	IOError(std::io::ErrorKind),
+	IOError,
 	Custom,
 	MissingFormatVersion,
 	EnumVariantIndexTooBig,
@@ -40,21 +40,22 @@ pub enum ErrorKind {
 	TypeMismatch,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Error {
 	kind: ErrorKind,
-	msg: String
+	msg: String,
+	source: Option<Box<dyn std::error::Error>>
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 impl Error {
 	pub fn new(kind: ErrorKind, msg: String) -> Self {
-		Self { kind: kind, msg: msg }
+		Self { kind: kind, msg: msg, source: None }
 	}
 
 	pub fn new_no_msg(kind: ErrorKind) -> Self {
-		Self { kind: kind, msg: String::from("") }
+		Self { kind: kind, msg: String::from(""), source: None }
 	}
 
 	pub fn kind(&self) -> ErrorKind {
@@ -63,7 +64,7 @@ impl Error {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Required traits for serde                                                 //
+// Required traits for serde Serializer/Deserializer                         //
 ///////////////////////////////////////////////////////////////////////////////
 
 impl ser::Error for Error {
@@ -84,7 +85,14 @@ impl fmt::Display for Error {
 	}
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error {
+	fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+		match &self.source {
+			Some(s) => Some(s.as_ref()),
+			None => None
+		}
+	}
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Try/From trait implementations for convenience                            //
@@ -93,11 +101,9 @@ impl std::error::Error for Error {}
 impl From<std::io::Error> for Error {
 	fn from(ioe: std::io::Error) -> Self {
 		Self {
-			kind: ErrorKind::IOError(ioe.kind()),
-			msg: match ioe.into_inner() {
-				None => "IOError".to_string(),
-				Some(inner_err) => inner_err.to_string()
-			}
+			kind: ErrorKind::IOError,
+			msg: ioe.to_string(),
+			source: Some(Box::new(ioe))
 		}
 	}
 }
