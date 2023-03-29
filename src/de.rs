@@ -224,16 +224,6 @@ impl<'de, R: Read> Deserializer<'de, R> {
 		Ok(bool_byte != 0)
 	}
 
-	fn parse_char(&mut self) -> Result<char> {
-		let mut scalar_buf = [0u8; 4];
-		self.read_raw(&mut scalar_buf)?;
-		let scalar_val = u32::from_le_bytes(scalar_buf);
-		match scalar_val.try_into() {
-			Ok(c) => Ok(c),
-			Err(_) => epee_err!(BadUnicodeScalar, "Deserialized invalid unicode scalar value: {:#10x}", scalar_val)
-		}
-	}
-
 	// @TODO construct string reference with class lifetime to avoid copying
 	// for section keys
 	fn parse_string_key(&mut self) -> Result<String> {
@@ -310,7 +300,7 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	define_simple_deser!{deserialize_seq}
 	define_simple_deser!{deserialize_map}
 
-	fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
+	fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
@@ -387,13 +377,13 @@ impl<'de, 'a, R: Read> de::Deserializer<'de> for &'a mut Deserializer<'de, R> {
 	fn deserialize_tuple_struct<V>(
 		self,
 		_name: &'static str,
-		len: usize,
-		visitor: V,
+		_len: usize,
+		_visitor: V,
 	) -> Result<V::Value>
 	where
 		V: Visitor<'de>,
 	{
-		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("Can't deserialize tuplle structs")))
+		Err(Error::new(ErrorKind::SerdeModelUnsupported, String::from("Can't deserialize tuple structs")))
 	}
 
 	fn deserialize_struct<V>(
