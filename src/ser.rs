@@ -190,6 +190,22 @@ where
 
 		Ok(())
 	}
+
+	fn serialize_seqtup<'b, 'c: 'b>(&'c mut self, len: Option<usize>) -> Result<Serializer<'b, W>> {
+		if self.storage_format == EpeeStorageFormat::Array {
+			return Err(Error::new_no_msg(ErrorKind::NestedArrays));
+		}
+
+		if let Some(l) = len {
+			if l <= constants::MAX_NUM_SECTION_FIELDS {
+				Serializer::new_array(self.writer, l as u32)
+			} else {
+				Err(Error::new_no_msg(ErrorKind::ArrayTooLong))
+			}
+		} else  {
+			Err(Error::new(ErrorKind::NoLength, String::from("EPEE serializer needs to know seq length ahead of time")))
+		}
+	}
 }
 
 macro_rules! serialize_num {
@@ -321,27 +337,11 @@ where
 	///////////////////////////////////////////////////////////////////////////
 
 	fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq> {
-		if self.storage_format == EpeeStorageFormat::Array {
-			return Err(Error::new_no_msg(ErrorKind::NestedArrays));
-		}
-
-		if let Some(l) = len {
-			if l <= constants::MAX_NUM_SECTION_FIELDS {
-				Serializer::new_array(self.writer, l as u32)
-			} else {
-				Err(Error::new_no_msg(ErrorKind::ArrayTooLong))
-			}
-		} else  {
-			Err(Error::new(ErrorKind::NoLength, String::from("EPEE serializer needs to know seq length ahead of time")))
-		}
+		self.serialize_seqtup(len)
 	}
 
 	fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
-		if len <= constants::MAX_NUM_SECTION_FIELDS {
-			Serializer::new_packed(self.writer, len as u32)
-		} else {
-			Err(Error::new_no_msg(ErrorKind::TupleTooLong))
-		}
+		self.serialize_seqtup(Some(len))
 	}
 
 	fn serialize_tuple_struct(

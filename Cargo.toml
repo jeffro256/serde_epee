@@ -13,3 +13,6 @@ homepage = "https://github.com/jeffro256/serde_epee"
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
+
+[dev-dependencies]
+hex = "0.4"
